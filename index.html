@@ -195,7 +195,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .tk-timer-badge.rojo{background:var(--danger-bg);color:#991b1b}
 .tk-timer-badge.cerrado{background:#f1f5f9;color:#475569}
 
-/* ── TEXTO SLOTS ── */
+/* ── TEXTO SLOTS (legacy) ── */
 .texto-slot{background:#f8fafc;border:1.5px solid var(--border);border-radius:12px;padding:12px;margin-top:10px}
 .texto-slot-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .texto-slot-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
@@ -205,6 +205,27 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .tk-texto-item{background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:7px}
 .tk-texto-num{font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px}
 .tk-texto-coment{font-size:13px;color:var(--text);line-height:1.6;white-space:pre-wrap}
+
+/* ── IMAGEN SLOTS ── */
+.img-upload-area{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.img-slot{position:relative;aspect-ratio:1;border-radius:10px;border:2px dashed var(--border2);background:#f8fafc;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;transition:all .2s}
+.img-slot:hover{border-color:var(--primary);background:var(--primary-light)}
+.img-slot.filled{border:2px solid var(--primary);background:#000}
+.img-slot img{width:100%;height:100%;object-fit:cover;border-radius:8px}
+.img-slot-placeholder{display:flex;flex-direction:column;align-items:center;gap:4px;pointer-events:none}
+.img-slot-placeholder span{font-size:24px}
+.img-slot-placeholder p{font-size:10px;font-weight:600;color:var(--muted);text-align:center}
+.img-remove-btn{position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:rgba(239,68,68,.9);color:#fff;border:none;font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:800}
+.img-counter{font-size:12px;font-weight:700;color:var(--muted);margin-top:8px;text-align:center}
+.img-counter span{color:var(--primary)}
+.tk-imgs-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px}
+.tk-img-thumb{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);transition:opacity .15s}
+.tk-img-thumb:hover{opacity:.85}
+/* Lightbox */
+#imgLightbox{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;padding:20px}
+#imgLightbox.show{display:flex}
+#imgLightbox img{max-width:100%;max-height:90vh;border-radius:10px;object-fit:contain}
+#imgLightbox .lb-close{position:absolute;top:16px;right:16px;color:#fff;font-size:28px;font-weight:800;cursor:pointer;background:rgba(255,255,255,.15);border:none;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center}
 
 /* ── USERS ── */
 .user-item{background:var(--surface);border-radius:12px;padding:13px 15px;margin-bottom:9px;border:1px solid var(--border);box-shadow:var(--sh-sm);display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
@@ -567,27 +588,29 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
           <button class="btn-primary" onclick="crearUsuario()" style="margin-top:14px">➕ Crear usuario</button>
         </div>
 
-        <!-- IMPORTAR ASESORES CSV -->
+        <!-- IMPORTAR ASESORES EXCEL -->
         <div class="import-section">
-          <div class="import-title">📂 Importar Asesores desde CSV</div>
-          <div class="import-sub">Formato esperado (sin encabezado): <code style="background:#f1f5f9;padding:1px 6px;border-radius:4px;font-size:11px">nombre, usuario, contraseña</code></div>
-          <div class="import-dropzone" id="dropAsesor" onclick="document.getElementById('csvAsesor').click()" ondrop="dropHandler(event,'asesor')" ondragover="e=>e.preventDefault()">
-            <input type="file" id="csvAsesor" accept=".csv" onchange="importCSV(this,'asesor')">
-            <div style="font-size:24px;margin-bottom:8px">📥</div>
-            <div style="font-size:13px;font-weight:600;color:var(--muted)">Click o arrastra el CSV de asesores</div>
+          <div class="import-title">📊 Importar Asesores desde Excel</div>
+          <div class="import-sub">Sube un archivo <b>.xlsx</b> con columnas: <code style="background:#f1f5f9;padding:1px 6px;border-radius:4px;font-size:11px">nombre | usuario | contraseña</code> (con o sin encabezado)</div>
+          <div class="import-dropzone" id="dropAsesor" onclick="document.getElementById('csvAsesor').click()" ondrop="dropHandler(event,'asesor')" ondragover="event.preventDefault()">
+            <input type="file" id="csvAsesor" accept=".xlsx,.xls,.csv" onchange="importExcel(this,'asesor')">
+            <div style="font-size:24px;margin-bottom:8px">📊</div>
+            <div style="font-size:13px;font-weight:600;color:var(--muted)">Click o arrastra el Excel de asesores</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">.xlsx · .xls · .csv</div>
           </div>
           <div id="previewAsesor" class="import-preview"></div>
           <div id="resultAsesor"></div>
         </div>
 
-        <!-- IMPORTAR TÉCNICOS CSV -->
+        <!-- IMPORTAR TÉCNICOS EXCEL -->
         <div class="import-section">
-          <div class="import-title">📂 Importar Técnicos desde CSV</div>
-          <div class="import-sub">Formato esperado (sin encabezado): <code style="background:#f1f5f9;padding:1px 6px;border-radius:4px;font-size:11px">nombre, usuario, contraseña</code></div>
-          <div class="import-dropzone" id="dropTecnico" onclick="document.getElementById('csvTecnico').click()" ondrop="dropHandler(event,'tecnico')" ondragover="e=>e.preventDefault()">
-            <input type="file" id="csvTecnico" accept=".csv" onchange="importCSV(this,'tecnico')">
-            <div style="font-size:24px;margin-bottom:8px">📥</div>
-            <div style="font-size:13px;font-weight:600;color:var(--muted)">Click o arrastra el CSV de técnicos</div>
+          <div class="import-title">📊 Importar Técnicos desde Excel</div>
+          <div class="import-sub">Sube un archivo <b>.xlsx</b> con columnas: <code style="background:#f1f5f9;padding:1px 6px;border-radius:4px;font-size:11px">nombre | usuario | contraseña</code> (con o sin encabezado)</div>
+          <div class="import-dropzone" id="dropTecnico" onclick="document.getElementById('csvTecnico').click()" ondrop="dropHandler(event,'tecnico')" ondragover="event.preventDefault()">
+            <input type="file" id="csvTecnico" accept=".xlsx,.xls,.csv" onchange="importExcel(this,'tecnico')">
+            <div style="font-size:24px;margin-bottom:8px">📊</div>
+            <div style="font-size:13px;font-weight:600;color:var(--muted)">Click o arrastra el Excel de técnicos</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">.xlsx · .xls · .csv</div>
           </div>
           <div id="previewTecnico" class="import-preview"></div>
           <div id="resultTecnico"></div>
@@ -615,6 +638,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
   <div class="bottom-nav" id="bottomNav"></div>
 </div>
 
+<!-- LIGHTBOX -->
+<div id="imgLightbox" onclick="this.classList.remove('show')">
+  <button class="lb-close" onclick="document.getElementById('imgLightbox').classList.remove('show')">✕</button>
+  <img id="lbImg" src="" alt="imagen">
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -624,6 +653,9 @@ import {
   getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
   onSnapshot, query, where, orderBy, getDoc, getDocs, Timestamp, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  getStorage, ref, uploadBytes, getDownloadURL, deleteObject
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
 /* ── NOTA IMPORTANTE ──────────────────────────────────────────────────
    Este archivo usa Firestore (no Realtime Database).
@@ -641,9 +673,10 @@ const app = initializeApp({
   messagingSenderId:"338263949066",
   appId:"1:338263949066:web:0c8abbd09e161ab01f84f3"
 });
-const db  = getFirestore(app);
-const tkCol = collection(db, 'tickets');
-const usCol = collection(db, 'usuarios');
+const db      = getFirestore(app);
+const storage = getStorage(app);
+const tkCol   = collection(db, 'tickets');
+const usCol   = collection(db, 'usuarios');
 
 /* listeners activos — los cancelamos en logout para liberar memoria */
 let unsubTickets  = null;
@@ -931,15 +964,25 @@ window.checkCodSolucion=function(){
 };
 
 /* ── CAMPOS DINÁMICOS ── */
+const MAX_IMGS=7;
+let imgData={};
+
 function renderDynFields(campos){
-  const c=document.getElementById('dyn-container');c.innerHTML='';fotos=[];
+  const c=document.getElementById('dyn-container');c.innerHTML='';fotos=[];imgData={};
   campos.forEach(campo=>{
     const div=document.createElement('div');div.className='card';
     if(campo==='img'||campo==='imgEquipos'||campo==='imgCintillos'){
-      const titulo=campo==='imgEquipos'?'📋 Notas - Equipos':campo==='imgCintillos'?'📋 Notas - FAT y Cintillos':'📋 Notas de Evidencia';
+      const titulo=campo==='imgEquipos'?'📷 Imágenes - Equipos':campo==='imgCintillos'?'📷 Imágenes - FAT y Cintillos':'📷 Imágenes de Evidencia';
+      imgData[campo]=[];
       div.setAttribute('data-campo',campo);
-      div.innerHTML='<div class="card-title">'+titulo+'</div><div id="textos_'+campo+'"></div><button class="btn-add-texto" onclick="addTexto(\''+campo+'\')">➕ Agregar nota de texto</button>';
-      c.appendChild(div);addTexto(campo);return;
+      div.innerHTML='<div class="card-title">'+titulo+'</div>'
+        +'<div class="img-upload-area" id="imgArea_'+campo+'"></div>'
+        +'<div class="img-counter" id="imgCounter_'+campo+'"><span>0</span>/'+MAX_IMGS+' imágenes</div>'
+        +'<input type="file" id="imgInput_'+campo+'" accept="image/*" multiple style="display:none">';
+      c.appendChild(div);
+      // Usar addEventListener para evitar problemas de comillas en innerHTML
+      document.getElementById('imgInput_'+campo).addEventListener('change',function(e){onImgSelected(e,campo);});
+      renderImgSlots(campo);return;
     }else if(campo==='comentario'){div.innerHTML='<div class="card-title">💬 Comentario de Cuadrilla</div><textarea class="f-textarea" id="f-comentario" placeholder="Describe la situación encontrada..."></textarea>';}
     else if(campo==='telefono'){div.innerHTML='<div class="card-title">📞 Teléfono del Cliente</div><input class="f-input" id="f-telefono" type="tel" placeholder="Número de teléfono" style="margin-bottom:0">';}
     else if(campo==='direccion'){div.innerHTML='<div class="card-title">📍 Dirección Correcta</div><input class="f-input" id="f-dircorrecta" type="text" placeholder="Dirección correcta del cliente" style="margin-bottom:0">';}
@@ -948,17 +991,91 @@ function renderDynFields(campos){
   });
 }
 
-window.addTexto=function(campo){
-  if(!textoCounters[campo])textoCounters[campo]=0;
-  const idx=textoCounters[campo]++;const slotId='tslot_'+campo+'_'+idx;const taId='tt_'+campo+'_'+idx;
-  const slots=document.getElementById('textos_'+campo);if(!slots)return;
-  const num=slots.children.length+1;const slot=document.createElement('div');slot.className='texto-slot';slot.id=slotId;
-  slot.innerHTML='<div class="texto-slot-header"><span class="texto-slot-label">📝 Nota '+num+'</span><button class="texto-remove" onclick="removeTexto(\''+slotId+'\',\''+campo+'\')">✕ Eliminar</button></div><textarea class="texto-textarea" id="'+taId+'" placeholder="Escribe tu nota aquí..."></textarea>';
-  slots.appendChild(slot);renumerarTextos(campo);
+function renderImgSlots(campo){
+  const area=document.getElementById('imgArea_'+campo);
+  const counter=document.getElementById('imgCounter_'+campo);
+  if(!area)return;
+  const imgs=imgData[campo]||[];
+  area.innerHTML='';
+  imgs.forEach((item,i)=>{
+    const src=typeof item==='string'?item:item.previewUrl;
+    const slot=document.createElement('div');slot.className='img-slot filled';
+    slot.innerHTML='<img src="'+src+'" alt="img '+(i+1)+'" onclick="openLightbox(\''+campo+'\','+i+')">'+'<button class="img-remove-btn" onclick="removeImg(\''+campo+'\','+i+')">✕</button>';
+    area.appendChild(slot);
+  });
+  if(imgs.length<MAX_IMGS){
+    const add=document.createElement('div');add.className='img-slot';
+    add.innerHTML='<div class="img-slot-placeholder"><span>📷</span><p>Agregar<br>imagen</p></div>';
+    add.onclick=()=>document.getElementById('imgInput_'+campo).click();
+    area.appendChild(add);
+  }
+  if(counter)counter.innerHTML='<span>'+imgs.length+'</span>/'+MAX_IMGS+' imágenes';
+}
+
+/* Cada entrada de imgData es { blob: File/Blob, previewUrl: string } */
+window.onImgSelected=function(event,campo){
+  const files=Array.from(event.target.files);
+  event.target.value='';
+  if(!imgData[campo])imgData[campo]=[];
+  const disponibles=MAX_IMGS-imgData[campo].length;
+  if(!disponibles){showToast('⚠️ Máximo '+MAX_IMGS+' imágenes','e');return;}
+  const toProcess=files.slice(0,disponibles);
+  let loaded=0;
+  toProcess.forEach(file=>{
+    if(!file.type.startsWith('image/')){loaded++;if(loaded===toProcess.length)renderImgSlots(campo);return;}
+    // Comprimir antes de guardar el blob
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        const MAX=1024;let w=img.width,h=img.height;
+        if(w>MAX||h>MAX){if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;}}
+        const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        canvas.toBlob(blob=>{
+          const previewUrl=URL.createObjectURL(blob);
+          imgData[campo].push({blob,previewUrl});
+          loaded++;if(loaded===toProcess.length)renderImgSlots(campo);
+        },'image/jpeg',0.72);
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+  if(files.length>disponibles)showToast('⚠️ Solo se agregaron '+disponibles+' (límite '+MAX_IMGS+')','e');
 };
-window.removeTexto=function(slotId,campo){const s=document.getElementById(slotId);if(s)s.remove();renumerarTextos(campo);};
-function renumerarTextos(campo){const slots=document.getElementById('textos_'+campo);if(!slots)return;Array.from(slots.children).forEach((s,i)=>{const l=s.querySelector('.texto-slot-label');if(l)l.textContent='📝 Nota '+(i+1);});}
-function getTextosFromCampo(campo){const slots=document.getElementById('textos_'+campo);if(!slots)return[];return Array.from(slots.querySelectorAll('textarea')).map(t=>t.value.trim()).filter(Boolean);}
+
+window.removeImg=function(campo,idx){
+  if(!imgData[campo])return;
+  const item=imgData[campo][idx];
+  if(item&&item.previewUrl)URL.revokeObjectURL(item.previewUrl);
+  imgData[campo].splice(idx,1);renderImgSlots(campo);
+};
+
+window.openLightbox=function(campo,idx){
+  const lb=document.getElementById('imgLightbox');
+  const lbImg=document.getElementById('lbImg');
+  if(!lb||!lbImg)return;
+  lbImg.src=imgData[campo][idx].previewUrl;
+  lb.classList.add('show');
+};
+
+/* Sube todas las imágenes de un campo a Storage y devuelve array de URLs */
+async function uploadImgsCampo(campo,tkId){
+  const items=imgData[campo]||[];
+  if(!items.length)return[];
+  const urls=[];
+  for(let i=0;i<items.length;i++){
+    const path='tickets/'+tkId+'/'+campo+'_'+i+'.jpg';
+    const storageRef=ref(storage,path);
+    await uploadBytes(storageRef,items[i].blob,{contentType:'image/jpeg'});
+    const url=await getDownloadURL(storageRef);
+    urls.push(url);
+  }
+  return urls;
+}
+
+function getTextosFromCampo(campo){return[];}
 
 /* ── SUBMIT TICKET ── */
 window.submitTicket=async function(){
@@ -975,20 +1092,29 @@ window.submitTicket=async function(){
   const val=id=>{const el=document.getElementById(id);return el?el.value:'';};
   const now=new Date();const tkId='TK-'+String(tickets.length+1).padStart(4,'0');
   const lat=document.getElementById('f-lat').value;const lng=document.getElementById('f-lng').value;
-  const t={
-    id:tkId,timestamp:now.getTime(),
-    fecha:now.toLocaleDateString('es-PE'),hora:now.toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'}),
-    tecnico:me.nombre,telTecnico:me.telAsesor||'',region,departamento,contrata,tipoTrabajo,sot,
-    tipoGestion,motivo,sub,
-    lat:lat||'',lng:lng||'',
-    telefono:val('f-telefono'),dirCorrecta:val('f-dircorrecta'),
-    motivoReprog:val('f-reprog'),codSolucion:val('f-codsol'),comentario:val('f-comentario'),dir:val('f-dir'),
-    notas:getTextosFromCampo('img'),notasEquipos:getTextosFromCampo('imgEquipos'),notasCintillos:getTextosFromCampo('imgCintillos'),
-    imagenes:[],estado:'pendiente',
-    asesorAsignado:autoAsignarAsesor(region,departamento,contrata,tipoGestion),
-    asesor:'',obsAsesor:'',fechaGestion:'',timestampCierre:null
-  };
   try{
+    btn.textContent='⏳ Subiendo imágenes...';
+    // Subir imágenes a Storage y obtener URLs
+    const [imagenes,imagenesEquipos,imagenesCintillos]=await Promise.all([
+      uploadImgsCampo('img',tkId),
+      uploadImgsCampo('imgEquipos',tkId),
+      uploadImgsCampo('imgCintillos',tkId)
+    ]);
+    btn.textContent='⏳ Guardando ticket...';
+    const t={
+      id:tkId,timestamp:now.getTime(),
+      fecha:now.toLocaleDateString('es-PE'),hora:now.toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'}),
+      tecnico:me.nombre,telTecnico:me.telAsesor||'',region,departamento,contrata,tipoTrabajo,sot,
+      tipoGestion,motivo,sub,
+      lat:lat||'',lng:lng||'',
+      telefono:val('f-telefono'),dirCorrecta:val('f-dircorrecta'),
+      motivoReprog:val('f-reprog'),codSolucion:val('f-codsol'),comentario:val('f-comentario'),dir:val('f-dir'),
+      notas:[],notasEquipos:[],notasCintillos:[],
+      imagenes,imagenesEquipos,imagenesCintillos,
+      estado:'pendiente',
+      asesorAsignado:autoAsignarAsesor(region,departamento,contrata,tipoGestion),
+      asesor:'',obsAsesor:'',fechaGestion:'',timestampCierre:null
+    };
     await addDoc(tkCol, t);
     resetForm();
     showToast(t.asesorAsignado?'✅ '+tkId+' · 📌 '+t.asesorAsignado:'✅ '+tkId+' registrado','s');
@@ -1007,7 +1133,7 @@ function resetForm(){
   document.getElementById('dyn-container').innerHTML='';
   document.getElementById('card-codsol').style.display='none';
   document.getElementById('f-lat').value='';document.getElementById('f-lng').value='';
-  fotos=[];textoCounters={};gpsCoords=null;
+  fotos=[];textoCounters={};imgData={};gpsCoords=null;
   captureGPS();
 }
 
@@ -1091,11 +1217,14 @@ function buildCard(t,rol,idx){
   const stag=t.estado==='pendiente'?'tag-pend':t.estado==='atendido'?'tag-atend':'tag-den';
   const safe='c'+rol+idx;fbMap[safe]=t.fbKey;
 
-  const renderNotas=(notas,titulo)=>{
-    if(!notas||!notas.length)return'';
-    return'<div style="margin-bottom:8px"><div class="tk-texto-num" style="font-size:12px;font-weight:700;margin-bottom:6px">📋 '+titulo+'</div>'+notas.map((n,i)=>'<div class="tk-texto-item"><div class="tk-texto-num">📝 Nota '+(i+1)+'</div><div class="tk-texto-coment">'+n+'</div></div>').join('')+'</div>';
+  const renderImgs=(imgs,titulo)=>{
+    if(!imgs||!imgs.length)return'';
+    return'<div style="margin-bottom:10px">'
+      +'<div class="tk-texto-num" style="font-size:12px;font-weight:700;margin-bottom:6px">📷 '+titulo+' ('+imgs.length+')</div>'
+      +'<div class="tk-imgs-grid">'+imgs.map((src,i)=>'<img class="tk-img-thumb" src="'+src+'" alt="img '+(i+1)+'" onclick="openTicketLightbox(this.src)">').join('')+'</div>'
+      +'</div>';
   };
-  let fotosHTML=renderNotas(t.notas,'Notas de Evidencia')+renderNotas(t.notasEquipos,'Notas - Equipos')+renderNotas(t.notasCintillos,'Notas - FAT y Cintillos');
+  let fotosHTML=renderImgs(t.imagenes,'Evidencia')+renderImgs(t.imagenesEquipos,'Equipos')+renderImgs(t.imagenesCintillos,'FAT y Cintillos');
 
   // GPS coordinates display
   let coordsHTML='';
@@ -1247,40 +1376,60 @@ window.crearUsuario=async function(){
   }catch(e){showToast('❌ Error: '+e.message,'e');}
 };
 
-/* ── IMPORTAR CSV ── */
-window.importCSV=async function(inputEl,rol){
+/* ── IMPORTAR EXCEL / CSV ── */
+window.importExcel=async function(inputEl,rol){
   const file=inputEl.files[0];if(!file)return;
   const previewEl=document.getElementById('preview'+capitalize(rol));
   const resultEl=document.getElementById('result'+capitalize(rol));
-  resultEl.innerHTML='<div class="import-result" style="background:#f0f9ff;border:1px solid #bae6fd;color:#0369a1">⏳ Importando...</div>';
-  const text=await file.text();
-  const lines=text.split('\n').map(l=>l.trim()).filter(l=>l);
-  previewEl.textContent='Vista previa: '+lines.slice(0,3).join(' | ')+(lines.length>3?' ...':'');
+  resultEl.innerHTML='<div class="import-result" style="background:#f0f9ff;border:1px solid #bae6fd;color:#0369a1">⏳ Leyendo archivo...</div>';
+
+  if(typeof XLSX==='undefined'){
+    resultEl.innerHTML='<div class="import-result err">❌ Librería XLSX no cargada. Recarga la página.</div>';return;
+  }
+
+  // Leer el archivo como ArrayBuffer (funciona para xlsx, xls y csv)
+  const buffer=await file.arrayBuffer();
+  const workbook=XLSX.read(buffer,{type:'array'});
+  const sheet=workbook.Sheets[workbook.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:''});
+
+  if(!rows.length){
+    resultEl.innerHTML='<div class="import-result err">❌ El archivo está vacío.</div>';return;
+  }
+
+  // Detectar si la primera fila es encabezado
+  const firstRow=rows[0].map(c=>String(c).toLowerCase().trim());
+  const tieneEncabezado=firstRow.some(c=>c.includes('nombre')||c.includes('usuario')||c.includes('user')||c.includes('password')||c.includes('contrase'));
+  const dataRows=tieneEncabezado?rows.slice(1):rows;
+
+  // Vista previa
+  previewEl.textContent='Vista previa: '+dataRows.slice(0,2).map(r=>r.slice(0,3).join(' | ')).join('  ·  ')+(dataRows.length>2?' ...':'');
+
   let ok=0,skip=0,errors=[];
-  // Usamos batch para importaciones grandes → menos operaciones Firestore
-  const BATCH_SIZE=400; // Firestore límite: 500 ops por batch
-  let batch=writeBatch(db); let batchCount=0;
-  for(const line of lines){
-    const parts=line.split(',').map(p=>p.trim());
-    if(parts.length<3){errors.push('Línea inválida');skip++;continue;}
-    const[nombre,usuario,password]=parts;
+  const BATCH_SIZE=400;
+  let batch=writeBatch(db);let batchCount=0;
+
+  for(const row of dataRows){
+    const nombre=String(row[0]||'').trim();
+    const usuario=String(row[1]||'').trim().replace(/\s/g,'');
+    const password=String(row[2]||'').trim();
     if(!nombre||!usuario||!password){skip++;continue;}
     if(password.length<4){errors.push(usuario+': contraseña corta');skip++;continue;}
     if(usuarios.find(u=>u.usuario===usuario)){skip++;errors.push(usuario+': ya existe');continue;}
-    // ID del doc = nombre de usuario → sin duplicados y búsqueda O(1)
     batch.set(doc(usCol,usuario),{nombre,usuario,password,rol,activo:true});
-    batchCount++; ok++;
-    if(batchCount>=BATCH_SIZE){
-      await batch.commit();
-      batch=writeBatch(db); batchCount=0;
-    }
+    batchCount++;ok++;
+    if(batchCount>=BATCH_SIZE){await batch.commit();batch=writeBatch(db);batchCount=0;}
   }
-  if(batchCount>0) await batch.commit();
-  const msg='✅ Importados: '+ok+' · ⚠️ Omitidos: '+skip+(errors.length?' · '+errors.slice(0,3).join(', '):'');
+  if(batchCount>0)await batch.commit();
+
+  const msg='✅ Importados: '+ok+' · ⚠️ Omitidos: '+skip+(errors.length?' · Errores: '+errors.slice(0,3).join(', '):'');
   resultEl.innerHTML='<div class="import-result '+(ok>0?'ok':'err')+'">'+msg+'</div>';
-  inputEl.value=''; previewEl.textContent='';
+  inputEl.value='';previewEl.textContent='';
   if(ok>0)showToast('✅ '+ok+' '+rol+'s importados','s');
 };
+
+// Mantener compatibilidad con nombre anterior
+window.importCSV=window.importExcel;
 
 function capitalize(s){return s.charAt(0).toUpperCase()+s.slice(1);}
 
@@ -1289,7 +1438,7 @@ window.dropHandler=function(event,rol){
   const file=event.dataTransfer.files[0];if(!file)return;
   const input=document.getElementById('csv'+capitalize(rol));
   const dt=new DataTransfer();dt.items.add(file);input.files=dt.files;
-  importCSV(input,rol);
+  importExcel(input,rol);
 };
 
 window.toggleEstadoAsesor=async function(fbKey){
@@ -1407,6 +1556,12 @@ function showToast(msg,type){
   const t=document.getElementById('toast');t.textContent=msg;t.className='toast '+(type||'');
   t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200);
 }
+window.openTicketLightbox=function(src){
+  const lb=document.getElementById('imgLightbox');
+  const lbImg=document.getElementById('lbImg');
+  if(!lb||!lbImg)return;
+  lbImg.src=src;lb.classList.add('show');
+};
 window.showToast=showToast;
 
 /* ── INIT ──
