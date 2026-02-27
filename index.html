@@ -2,9 +2,48 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://www.gstatic.com https://fonts.googleapis.com https://fonts.gstatic.com https://firestore.googleapis.com https://firebase.googleapis.com https://identitytoolkit.googleapis.com https://*.firebaseio.com https://*.firebasestorage.app https://maps.google.com https://cdnjs.cloudflare.com; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.firebasestorage.app https://*.googleapis.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasestorage.app;">
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta http-equiv="X-Frame-Options" content="DENY">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Soporte HITSS</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+// ── CAPA 1: Anti-DevTools ─────────────────────────────────────────
+(function(){
+  // Detectar apertura de DevTools por diferencia de tamaño de ventana
+  var _threshold = 160;
+  var _devOpen = false;
+  function _checkDev(){
+    var w = window.outerWidth - window.innerWidth > _threshold;
+    var h = window.outerHeight - window.innerHeight > _threshold;
+    if(w || h){
+      if(!_devOpen){ _devOpen=true; _onDevOpen(); }
+    } else { _devOpen=false; }
+  }
+  function _onDevOpen(){
+    // Redirigir a pantalla en blanco y limpiar sesión
+    try{ sessionStorage.clear(); localStorage.removeItem('hitss_session'); }catch(e){}
+    document.body.innerHTML='<div style="background:#000;color:#fff;height:100vh;display:flex;align-items:center;justify-content:center;font-family:monospace;font-size:18px">🚫 Acceso no autorizado</div>';
+  }
+  setInterval(_checkDev, 1000);
+
+  // Bloquear F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U, Ctrl+S
+  document.addEventListener('keydown', function(e){
+    if(e.keyCode===123) { e.preventDefault(); return false; }
+    if(e.ctrlKey && e.shiftKey && (e.keyCode===73||e.keyCode===74||e.keyCode===67)) { e.preventDefault(); return false; }
+    if(e.ctrlKey && (e.keyCode===85||e.keyCode===83)) { e.preventDefault(); return false; }
+  });
+
+  // Bloquear clic derecho
+  document.addEventListener('contextmenu', function(e){ e.preventDefault(); return false; });
+
+  // Bloquear selección de texto (anti-copiar código)
+  document.addEventListener('selectstart', function(e){ e.preventDefault(); return false; });
+  document.addEventListener('dragstart',   function(e){ e.preventDefault(); return false; });
+})();
+</script>
 <style>
 :root{
   --bg:#0f1e3d;--bg2:#162447;--surface:rgba(255,255,255,.07);--surface2:rgba(255,255,255,.11);
@@ -398,6 +437,15 @@ input:disabled,.f-input[readonly]{background:rgba(255,255,255,.04)!important;col
   .htabs{display:none}
 }
 #asesorToggleWrap{display:none;align-items:center;gap:6px}
+/* Capa 5: Anti-print y anti-screenshot CSS */
+@media print{
+  body::after{content:'🔒 DOCUMENTO CONFIDENCIAL - HITSS';position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:48px;color:rgba(239,68,68,.3);pointer-events:none;white-space:nowrap;z-index:9999}
+  .header,.bottom-nav,button{display:none!important}
+}
+/* Prevenir selección de texto en elementos sensibles */
+.user-name,.user-sub,.tk-id,.tk-motivo,.hitss-header-text{
+  -webkit-user-select:none;-moz-user-select:none;user-select:none;
+}
 </style>
 </head>
 <body>
@@ -869,39 +917,198 @@ window.guardarTelTecnico=async function(){
   }catch(e){showToast('❌ Error al guardar: '+e.message,'e');}
 };
 
+/* ── CAPA 2: Sesión con token + Rate limiting ── */
+const _SESSION_KEY = 'hitss_sess_v2';
+const _SESSION_TTL = 8 * 60 * 60 * 1000; // 8 horas
+const _LOGIN_ATTEMPTS_KEY = 'hitss_attempts';
+const _LOCKOUT_KEY = 'hitss_lockout';
+const _MAX_ATTEMPTS = 5;
+const _LOCKOUT_MS = 15 * 60 * 1000; // 15 minutos
+
+function _generateToken(user, rol){
+  // Token: base64(usuario|rol|timestamp|salt)
+  const salt = Math.random().toString(36).slice(2,10) + Date.now().toString(36);
+  const payload = btoa(unescape(encodeURIComponent([user, rol, Date.now(), salt].join('|'))));
+  return payload;
+}
+
+function _saveSession(userData){
+  const session = {
+    token: _generateToken(userData.usuario, userData.rol),
+    nombre: userData.nombre,
+    usuario: userData.usuario,
+    rol: userData.rol,
+    fbKey: userData.fbKey,
+    telAsesor: userData.telAsesor||'',
+    coberturas: userData.coberturas||[],
+    activo: userData.activo,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + _SESSION_TTL,
+    fingerprint: _getFingerprint()
+  };
+  sessionStorage.setItem(_SESSION_KEY, JSON.stringify(session));
+  return session;
+}
+
+function _getFingerprint(){
+  // Huella del navegador para detectar robo de sesión
+  return btoa([
+    navigator.language||'',
+    screen.colorDepth||'',
+    new Date().getTimezoneOffset()||'',
+    navigator.platform||''
+  ].join('|')).slice(0,16);
+}
+
+function _loadSession(){
+  try{
+    const raw = sessionStorage.getItem(_SESSION_KEY);
+    if(!raw) return null;
+    const sess = JSON.parse(raw);
+    if(Date.now() > sess.expiresAt){ sessionStorage.removeItem(_SESSION_KEY); return null; }
+    if(sess.fingerprint !== _getFingerprint()){ sessionStorage.removeItem(_SESSION_KEY); return null; }
+    return sess;
+  }catch(e){ return null; }
+}
+
+function _clearSession(){
+  sessionStorage.removeItem(_SESSION_KEY);
+}
+
+function _checkLockout(){
+  const lockUntil = parseInt(localStorage.getItem(_LOCKOUT_KEY)||'0');
+  if(Date.now() < lockUntil){
+    const mins = Math.ceil((lockUntil - Date.now()) / 60000);
+    return '🔒 Bloqueado '+mins+' min por intentos fallidos';
+  }
+  return null;
+}
+
+function _registerFailedAttempt(){
+  let attempts = parseInt(sessionStorage.getItem(_LOGIN_ATTEMPTS_KEY)||'0') + 1;
+  sessionStorage.setItem(_LOGIN_ATTEMPTS_KEY, attempts);
+  if(attempts >= _MAX_ATTEMPTS){
+    localStorage.setItem(_LOCKOUT_KEY, Date.now() + _LOCKOUT_MS);
+    sessionStorage.setItem(_LOGIN_ATTEMPTS_KEY, '0');
+    return true; // bloqueado
+  }
+  return false;
+}
+
+function _clearAttempts(){
+  sessionStorage.removeItem(_LOGIN_ATTEMPTS_KEY);
+  localStorage.removeItem(_LOCKOUT_KEY);
+}
+
+// Sanitizar inputs — prevenir XSS e inyecciones
+function _sanitize(str){
+  return String(str).replace(/[<>"'`]/g,'').trim().slice(0,100);
+}
+
 /* ── AUTH ── */
 window.doLogin=async function(){
-  const user=document.getElementById('loginUser').value.trim();
-  const pass=document.getElementById('loginPass').value;
   const err=document.getElementById('loginErr');
   err.textContent='';
-  if(!user||!pass){err.textContent='⚠️ Ingresa usuario y contraseña';return;}
 
-  // Buscamos en la lista de usuarios ya cargada (del listener inicial de usuarios)
-  // Si aún no cargó (red lenta), hacemos un get directo
-  let found = usuarios.find(u=>u.usuario===user&&u.password===pass);
+  // ── Rate limiting check ──
+  const lockMsg = _checkLockout();
+  if(lockMsg){ err.textContent=lockMsg; return; }
+
+  // ── Sanitizar inputs ──
+  const user = _sanitize(document.getElementById('loginUser').value);
+  const pass = document.getElementById('loginPass').value.slice(0,100);
+  if(!user||!pass){ err.textContent='⚠️ Ingresa usuario y contraseña'; return; }
+
+  // Pequeño delay para ralentizar ataques de fuerza bruta
+  const btn=document.getElementById('loginScreen').querySelector('.btn-primary');
+  btn.disabled=true; btn.textContent='⏳ Verificando...';
+  await new Promise(r=>setTimeout(r,600));
+
+  // Buscar usuario (comparación local con la lista ya cargada)
+  let found = usuarios.find(u=>u.usuario===user&&u.password===pass&&u.activo!==false);
   if(!found){
-    // Fallback: consulta directa a Firestore
     try{
-      const q = query(usCol, where('usuario','==',user), where('password','==',pass));
+      const q = query(usCol, where('usuario','==',user));
       const snap = await getDocs(q);
-      if(!snap.empty) found = {...snap.docs[0].data(), fbKey:snap.docs[0].id};
-    }catch(e){ err.textContent='❌ Error de conexión'; return; }
+      if(!snap.empty){
+        const ud = {...snap.docs[0].data(), fbKey:snap.docs[0].id};
+        if(ud.password===pass && ud.activo!==false) found=ud;
+      }
+    }catch(e){ err.textContent='❌ Error de conexión'; btn.disabled=false; btn.textContent='Ingresar →'; return; }
   }
 
-  if(!found){err.textContent='❌ Usuario o contraseña incorrectos';return;}
-  me=found;
+  if(!found){
+    const bloqueado = _registerFailedAttempt();
+    const intentos = parseInt(sessionStorage.getItem(_LOGIN_ATTEMPTS_KEY)||'0');
+    const restantes = _MAX_ATTEMPTS - intentos;
+    err.textContent = bloqueado
+      ? '🔒 Demasiados intentos. Bloqueado 15 minutos.'
+      : '❌ Credenciales incorrectas' + (restantes<=2 ? ' ('+restantes+' intento'+(restantes!==1?'s':'')+' restante'+(restantes!==1?'s':'')+')' : '');
+    btn.disabled=false; btn.textContent='Ingresar →';
+    return;
+  }
+
+  // ── Login exitoso ──
+  _clearAttempts();
+  me = found;
+  _saveSession(me); // Guardar sesión con token
+
+  // Iniciar listeners + UI
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('appScreen').style.display='block';
-
-  // Iniciar listeners optimizados SEGÚN EL ROL del usuario
   startListeners(me.rol);
   buildUI();
+  _startSecurityWatchers(); // Activar vigilancia de sesión
   if(me.rol==='tecnico') checkPhonePopup();
+  btn.disabled=false; btn.textContent='Ingresar →';
 };
 
+/* ── CAPA 3: Auto-logout por inactividad (30 min) + validación de sesión ── */
+var _inactivityTimer = null;
+var _SESSION_CHECK_INTERVAL = null;
+const _INACTIVITY_MS = 30 * 60 * 1000; // 30 minutos
+
+function _resetInactivityTimer(){
+  clearTimeout(_inactivityTimer);
+  _inactivityTimer = setTimeout(function(){
+    if(me){
+      showToast('⏰ Sesión cerrada por inactividad','e');
+      setTimeout(()=>window.logout(),1500);
+    }
+  }, _INACTIVITY_MS);
+}
+
+function _startSecurityWatchers(){
+  // Reiniciar timer en cualquier actividad
+  ['mousemove','keydown','touchstart','click','scroll'].forEach(ev=>{
+    document.addEventListener(ev, _resetInactivityTimer, {passive:true});
+  });
+  _resetInactivityTimer();
+
+  // Verificar validez de sesión cada 2 minutos
+  _SESSION_CHECK_INTERVAL = setInterval(function(){
+    if(!me) return;
+    const sess = _loadSession();
+    if(!sess){
+      showToast('⚠️ Sesión expirada','e');
+      setTimeout(()=>window.logout(),1500);
+    }
+  }, 2 * 60 * 1000);
+}
+
+function _stopSecurityWatchers(){
+  clearTimeout(_inactivityTimer);
+  clearInterval(_SESSION_CHECK_INTERVAL);
+  ['mousemove','keydown','touchstart','click','scroll'].forEach(ev=>{
+    document.removeEventListener(ev, _resetInactivityTimer);
+  });
+}
+
 window.logout=function(){
-  // ⚠️ IMPORTANTE: cancelar listeners al salir para liberar memoria
+  // Limpiar sesión y seguridad
+  _clearSession();
+  _stopSecurityWatchers();
+  // Cancelar listeners Firestore
   if(unsubTickets)  { unsubTickets();  unsubTickets=null;  }
   if(unsubUsuarios) { unsubUsuarios(); unsubUsuarios=null; }
   me=null; tickets=[]; usuarios=[];
@@ -910,7 +1117,6 @@ window.logout=function(){
   document.getElementById('loginErr').textContent='';
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('appScreen').style.display='none';
-  // Reiniciar listener básico de usuarios para el login
   loginShown=false;
   onSnapshot(query(usCol), snap=>{
     showLogin();
@@ -1131,13 +1337,26 @@ async function uploadImgsCampo(campo,tkId){
 
 function getTextosFromCampo(campo){return[];}
 
+/* ── CAPA 4: Guard de autenticación y rol ── */
+function _requireAuth(rolesPermitidos){
+  if(!me){ showToast('🔒 Debes iniciar sesión','e'); window.logout(); return false; }
+  const sess = _loadSession();
+  if(!sess){ showToast('⚠️ Sesión inválida','e'); window.logout(); return false; }
+  if(me.activo===false){ showToast('🚫 Tu cuenta está desactivada','e'); window.logout(); return false; }
+  if(rolesPermitidos && !rolesPermitidos.includes(me.rol)){
+    showToast('🚫 Sin permisos para esta acción','e'); return false;
+  }
+  return true;
+}
+
 /* ── SUBMIT TICKET ── */
 window.submitTicket=async function(){
+  if(!_requireAuth(['tecnico'])) return;
   const region=document.getElementById('f-region').value;
   const departamento=document.getElementById('f-departamento').value;
   const contrata=document.getElementById('f-contrata').value;
   const tipoTrabajo=document.getElementById('f-tipotrabajo').value;
-  const sot=document.getElementById('f-sot').value.trim();
+  const sot=_sanitize(document.getElementById('f-sot').value);
   const tipoGestion=document.getElementById('f-tipogestion').value;
   const motivo=document.getElementById('f-motivo').value;
   const sub=document.getElementById('f-sub').value;
@@ -1389,6 +1608,7 @@ function renderTimers(){
 
 /* ── GESTIÓN TICKETS ── */
 window.asignar=async function(safe){
+  if(!_requireAuth(['admin'])) return;
   const fbKey=fbMap[safe];const sel=document.getElementById('asel_'+safe);if(!sel)return;
   try{
     await updateDoc(doc(tkCol,fbKey),{asesorAsignado:sel.value});
@@ -1397,6 +1617,7 @@ window.asignar=async function(safe){
 };
 
 window.gestionar=async function(safe,estado){
+  if(!_requireAuth(['asesor','admin'])) return;
   const fbKey=fbMap[safe];const tk=tickets.find(x=>x.fbKey===fbKey);
   if(!tk){showToast('⚠️ Ticket no encontrado','e');return;}
   if(tk.estado!=='pendiente'){showToast('⚠️ Ya fue gestionado','e');return;}
@@ -1414,6 +1635,7 @@ window.gestionar=async function(safe,estado){
 
 /* ── USUARIOS ── */
 window.crearUsuario=async function(){
+  if(!_requireAuth(['admin'])) return;
   const nombre=document.getElementById('nu-nombre').value.trim();
   const usuario=document.getElementById('nu-user').value.trim().replace(/\s/g,'');
   const password=document.getElementById('nu-pass').value;
@@ -1505,6 +1727,7 @@ window.toggleEstadoAsesor=async function(fbKey){
 };
 
 window.eliminarUsuario=async function(fbKey,usuario){
+  if(!_requireAuth(['admin'])) return;
   if(usuario==='admin'){showToast('⚠️ No puedes eliminar al admin','e');return;}
   if(me.usuario===usuario){showToast('⚠️ No puedes eliminarte a ti mismo','e');return;}
   if(!confirm('¿Eliminar usuario "'+usuario+'"? Esta acción no se puede deshacer.'))return;
@@ -1570,6 +1793,7 @@ function getTiposSeleccionados(fbKey){
 }
 
 window.agregarCobertura=async function(fbKey){
+  if(!_requireAuth(['admin'])) return;
   const region=document.getElementById('cobr_'+fbKey).value;
   const depto=document.getElementById('cobd_'+fbKey).value;
   const contrata=document.getElementById('cobc_'+fbKey).value;
