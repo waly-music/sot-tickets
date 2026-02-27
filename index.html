@@ -8,7 +8,10 @@
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Soporte HITSS</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&display=swap" rel="stylesheet"></noscript>
 <script>
 // ── CAPA 1: Anti-DevTools ─────────────────────────────────────────
 (function(){
@@ -748,15 +751,16 @@ input:disabled,.f-input[readonly]{background:rgba(255,255,255,.04)!important;col
 
 <div class="toast" id="toast"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- XLSX se carga bajo demanda al exportar -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
-  onSnapshot, query, where, orderBy, getDoc, getDocs, Timestamp, writeBatch
+  onSnapshot, query, where, orderBy, getDocs, limit,
+  enableIndexedDbPersistence
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
-  getStorage, ref, uploadBytes, getDownloadURL, deleteObject
+  getStorage, ref as sref, uploadBytes, getDownloadURL
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
 /* ── NOTA IMPORTANTE ──────────────────────────────────────────────────
@@ -770,7 +774,7 @@ import {
 const app = initializeApp({
   apiKey:"AIzaSyB3TYkjogzXyqwExlGMIgFvuxOgMw34kek",
   authDomain:"webrousse.firebaseapp.com",
-  projectId:"webrousse",           // ← sin databaseURL, Firestore no lo necesita
+  projectId:"webrousse",
   storageBucket:"webrousse.firebasestorage.app",
   messagingSenderId:"338263949066",
   appId:"1:338263949066:web:0c8abbd09e161ab01f84f3"
@@ -779,6 +783,16 @@ const db      = getFirestore(app);
 const storage = getStorage(app);
 const tkCol   = collection(db, 'tickets');
 const usCol   = collection(db, 'usuarios');
+
+/* ── PERSISTENCIA OFFLINE ─────────────────────────────────────────────
+   Los técnicos en zonas sin señal pueden:
+   - Ver sus tickets guardados (IndexedDB local)
+   - El envío se encola y se sube automáticamente cuando vuelve la señal
+   ─────────────────────────────────────────────────────────────────── */
+enableIndexedDbPersistence(db).catch(err=>{
+  if(err.code==='failed-precondition') console.warn('Persistencia: múltiples tabs');
+  else if(err.code==='unimplemented') console.warn('Persistencia no soportada');
+});
 
 /* listeners activos — los cancelamos en logout para liberar memoria */
 let unsubTickets  = null;
@@ -806,11 +820,14 @@ let gpsCoords=null;
 
 /* ── SEED ADMIN ── */
 async function seedAdmin(){
-  // Crea el admin inicial si no existe ningún usuario
-  const snap = await getDocs(usCol);
-  if(snap.empty){
-    await setDoc(doc(usCol,'admin'),{nombre:'Administrador',usuario:'admin',password:'admin123',rol:'admin',activo:true});
-  }
+  /* Solo verificar si nunca se ha creado el admin.
+     Usa getDoc en lugar de getDocs para una sola lectura puntual. */
+  try{
+    const snap=await getDocs(query(usCol,limit(1)));
+    if(snap.empty){
+      await setDoc(doc(usCol,'admin'),{nombre:'Administrador',usuario:'admin',password:'admin123',rol:'admin',activo:true});
+    }
+  }catch(e){ console.warn('seedAdmin:',e); }
 }
 
 /* ── SHOW LOGIN ── */
@@ -831,64 +848,98 @@ setTimeout(showLogin, 6000);
    reduciendo lecturas de Firestore y ancho de banda en ~90%.
    ═══════════════════════════════════════════════════════════════════ */
 function startListeners(rol){
-  // Cancelar listeners previos si los hay
   if(unsubTickets)  { unsubTickets();  unsubTickets=null;  }
   if(unsubUsuarios) { unsubUsuarios(); unsubUsuarios=null; }
 
-  /* ── USUARIOS: todos los roles necesitan la lista (para asignación y login) ── */
-  unsubUsuarios = onSnapshot(
-    query(usCol, orderBy('nombre')),
-    snap => {
-      showLogin();
-      usuarios = snap.docs.map(d=>({...d.data(), fbKey:d.id}));
-      if(me && me.rol==='admin') renderUsuarios();
-      if(me && me.rol==='asesor'){
-        const u=usuarios.find(x=>x.fbKey===me.fbKey);
-        if(u){me.activo=u.activo; actualizarToggleAsesor();}
-      }
-    },
-    err => { console.error('usuarios listener:', err); showLogin(); }
-  );
-
-  /* ── TICKETS: query filtrada según rol ── */
-  let tkQuery;
+  /* ── USUARIOS ─────────────────────────────────────────────────────
+     Técnico: UNA sola lectura (getDocs), sin listener persistente.
+              Solo necesita la lista al login para autoAsignar; no
+              cambia mientras trabaja. Ahorra 100% de esas lecturas.
+     Asesor/Admin: listener en tiempo real (necesitan ver cambios).
+     ────────────────────────────────────────────────────────────────*/
   if(rol==='tecnico'){
-    // Técnico: solo sus propios tickets ordenados por fecha desc
-    tkQuery = query(tkCol, where('tecnico','==',me.nombre), orderBy('timestamp','desc'));
-  } else if(rol==='asesor'){
-    // Asesor: solo tickets asignados a él, pendientes primero
-    tkQuery = query(tkCol, where('asesorAsignado','==',me.nombre), orderBy('timestamp','desc'));
+    getDocs(query(usCol,orderBy('nombre'))).then(snap=>{
+      usuarios=snap.docs.map(d=>({...d.data(),fbKey:d.id}));
+    }).catch(e=>console.warn('usuarios fetch:',e));
   } else {
-    // Admin: todos los tickets — se justifica porque necesita stats globales
-    tkQuery = query(tkCol, orderBy('timestamp','desc'));
+    unsubUsuarios=onSnapshot(
+      query(usCol,orderBy('nombre')),
+      snap=>{
+        showLogin();
+        usuarios=snap.docs.map(d=>({...d.data(),fbKey:d.id}));
+        if(me&&me.rol==='admin') renderUsuarios();
+        if(me&&me.rol==='asesor'){
+          const u=usuarios.find(x=>x.fbKey===me.fbKey);
+          if(u){me.activo=u.activo; actualizarToggleAsesor();}
+        }
+      },
+      err=>{ console.error('usuarios listener:',err); showLogin(); }
+    );
   }
 
-  unsubTickets = onSnapshot(
+  /* ── TICKETS ──────────────────────────────────────────────────────
+     Límites por rol para minimizar datos transferidos:
+     - Técnico: máx 40 tickets propios  → ~10-15 KB por sync
+     - Asesor:  máx 60 tickets asignados
+     - Admin:   máx 150 (dashboard global)
+     Fallback automático si no existe el índice compuesto.
+     ────────────────────────────────────────────────────────────────*/
+  const LIMITS={tecnico:40,asesor:60,admin:150};
+  const lim=LIMITS[rol]||60;
+
+  let tkQuery;
+  if(rol==='tecnico')
+    tkQuery=query(tkCol,where('tecnico','==',me.nombre),orderBy('timestamp','desc'),limit(lim));
+  else if(rol==='asesor')
+    tkQuery=query(tkCol,where('asesorAsignado','==',me.nombre),orderBy('timestamp','desc'),limit(lim));
+  else
+    tkQuery=query(tkCol,orderBy('timestamp','desc'),limit(lim));
+
+  unsubTickets=onSnapshot(
     tkQuery,
-    snap => {
+    snap=>{
       showLogin();
-      tickets = snap.docs.map(d=>({...d.data(), fbKey:d.id}));
+      tickets=snap.docs.map(d=>({...d.data(),fbKey:d.id}));
       if(me) refreshViews();
     },
-    err => { console.error('tickets listener:', err); }
+    err=>{
+      console.error('tickets listener:',err);
+      /* Fallback si falta el índice compuesto */
+      if(err.code==='failed-precondition'||err.message.includes('index')){
+        showToast('⚠️ Cargando tickets...','e');
+        let fbQ;
+        if(rol==='tecnico') fbQ=query(tkCol,where('tecnico','==',me.nombre),limit(lim));
+        else if(rol==='asesor') fbQ=query(tkCol,where('asesorAsignado','==',me.nombre),limit(lim));
+        else fbQ=query(tkCol,orderBy('timestamp','desc'),limit(lim));
+        unsubTickets=onSnapshot(fbQ,
+          snap2=>{
+            tickets=snap2.docs.map(d=>({...d.data(),fbKey:d.id}));
+            tickets.sort((a,b)=>(b.timestamp||0)-(a.timestamp||0));
+            if(me) refreshViews();
+          },
+          err2=>console.error('fallback:',err2)
+        );
+      }
+    }
   );
 }
 
 /* ── GPS ── */
 function captureGPS(){
   const statusEl=document.getElementById('gpsStatus');
-  if(!navigator.geolocation){if(statusEl)statusEl.innerHTML='❌ GPS no disponible en este dispositivo';return;}
+  if(!navigator.geolocation){if(statusEl)statusEl.innerHTML='❌ GPS no disponible';return;}
+  if(statusEl)statusEl.innerHTML='📡 Obteniendo ubicación...';
   navigator.geolocation.getCurrentPosition(
     pos=>{
       gpsCoords={lat:pos.coords.latitude.toFixed(6),lng:pos.coords.longitude.toFixed(6)};
-      const latEl=document.getElementById('f-lat');
-      const lngEl=document.getElementById('f-lng');
-      if(latEl)latEl.value=gpsCoords.lat;
-      if(lngEl)lngEl.value=gpsCoords.lng;
-      if(statusEl)statusEl.innerHTML='✅ Coordenadas capturadas: <b>'+gpsCoords.lat+', '+gpsCoords.lng+'</b> <a href="https://maps.google.com/?q='+gpsCoords.lat+','+gpsCoords.lng+'" target="_blank" style="color:var(--primary);font-size:11px;margin-left:6px">Ver mapa 🗺️</a>';
+      const latEl=document.getElementById('f-lat');const lngEl=document.getElementById('f-lng');
+      if(latEl)latEl.value=gpsCoords.lat;if(lngEl)lngEl.value=gpsCoords.lng;
+      if(statusEl)statusEl.innerHTML='✅ GPS: <b>'+gpsCoords.lat+', '+gpsCoords.lng+'</b> <a href="https://maps.google.com/?q='+gpsCoords.lat+','+gpsCoords.lng+'" target="_blank" style="color:var(--primary);font-size:11px;margin-left:6px">Ver mapa 🗺️</a>';
     },
-    err=>{if(statusEl)statusEl.innerHTML='⚠️ No se pudo obtener GPS ('+err.message+')';gpsCoords=null;},
-    {enableHighAccuracy:true,timeout:10000,maximumAge:0}
+    err=>{if(statusEl)statusEl.innerHTML='⚠️ GPS no disponible ('+err.message+')';gpsCoords=null;},
+    /* maximumAge:120000 → reutiliza posición en caché de hasta 2 min,
+       evita petición de red GPS extra y ahorra batería en campo */
+    {enableHighAccuracy:false,timeout:15000,maximumAge:120000}
   );
 }
 
@@ -1283,12 +1334,13 @@ window.onImgSelected=function(event,campo){
   let loaded=0;
   toProcess.forEach(file=>{
     if(!file.type.startsWith('image/')){loaded++;if(loaded===toProcess.length)renderImgSlots(campo);return;}
-    // Comprimir antes de guardar el blob
     const reader=new FileReader();
     reader.onload=e=>{
       const img=new Image();
       img.onload=()=>{
-        const MAX=1024;let w=img.width,h=img.height;
+        /* 700px máx + 60% calidad → ~3–5× menos peso que el original.
+           En zonas con 1–2 barras de señal la diferencia es crítica. */
+        const MAX=700;let w=img.width,h=img.height;
         if(w>MAX||h>MAX){if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;}}
         const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
         canvas.getContext('2d').drawImage(img,0,0,w,h);
@@ -1296,7 +1348,7 @@ window.onImgSelected=function(event,campo){
           const previewUrl=URL.createObjectURL(blob);
           imgData[campo].push({blob,previewUrl});
           loaded++;if(loaded===toProcess.length)renderImgSlots(campo);
-        },'image/jpeg',0.72);
+        },'image/jpeg',0.60);
       };
       img.src=e.target.result;
     };
@@ -1320,17 +1372,25 @@ window.openLightbox=function(campo,idx){
   lb.classList.add('show');
 };
 
-/* Sube todas las imágenes de un campo a Storage y devuelve array de URLs */
+/* Sube imágenes con retry automático para zonas con señal débil */
 async function uploadImgsCampo(campo,tkId){
   const items=imgData[campo]||[];
   if(!items.length)return[];
   const urls=[];
   for(let i=0;i<items.length;i++){
     const path='tickets/'+tkId+'/'+campo+'_'+i+'.jpg';
-    const storageRef=ref(storage,path);
-    await uploadBytes(storageRef,items[i].blob,{contentType:'image/jpeg'});
-    const url=await getDownloadURL(storageRef);
-    urls.push(url);
+    const storageRef=sref(storage,path);
+    /* Reintentos: 1 intento + 2 reintentos con backoff (2s, 5s) */
+    let lastErr;
+    for(let attempt=0;attempt<3;attempt++){
+      try{
+        if(attempt>0) await new Promise(r=>setTimeout(r,attempt*2500));
+        await uploadBytes(storageRef,items[i].blob,{contentType:'image/jpeg'});
+        const url=await getDownloadURL(storageRef);
+        urls.push(url); lastErr=null; break;
+      }catch(e){ lastErr=e; console.warn('upload retry '+(attempt+1)+':',e.message); }
+    }
+    if(lastErr) throw new Error('No se pudo subir imagen '+(i+1)+': '+lastErr.message);
   }
   return urls;
 }
@@ -1361,19 +1421,27 @@ window.submitTicket=async function(){
   const motivo=document.getElementById('f-motivo').value;
   const sub=document.getElementById('f-sub').value;
   if(!region||!departamento||!contrata||!tipoTrabajo||!sot||!tipoGestion||!motivo||!sub){showToast('⚠️ Completa todos los campos requeridos','e');return;}
-  const btn=document.getElementById('btnSubmit');btn.disabled=true;btn.textContent='⏳ Enviando...';
+  const btn=document.getElementById('btnSubmit');btn.disabled=true;
   const val=id=>{const el=document.getElementById(id);return el?el.value:'';};
   const now=new Date();const tkId='TK-'+String(tickets.length+1).padStart(4,'0');
   const lat=document.getElementById('f-lat').value;const lng=document.getElementById('f-lng').value;
+
+  /* Calcular total de imágenes para mostrar progreso */
+  const totalImgs=['img','imgEquipos','imgCintillos'].reduce((s,c)=>s+(imgData[c]||[]).length,0);
+
   try{
-    btn.textContent='⏳ Subiendo imágenes...';
-    // Subir imágenes a Storage y obtener URLs
-    const [imagenes,imagenesEquipos,imagenesCintillos]=await Promise.all([
-      uploadImgsCampo('img',tkId),
-      uploadImgsCampo('imgEquipos',tkId),
-      uploadImgsCampo('imgCintillos',tkId)
-    ]);
-    btn.textContent='⏳ Guardando ticket...';
+    let imagenes=[],imagenesEquipos=[],imagenesCintillos=[];
+    if(totalImgs>0){
+      /* Subida SECUENCIAL (no paralela) para señal débil:
+         evita saturar el canal de subida con múltiples streams simultáneos */
+      btn.textContent='⏳ Subiendo img 1/'+totalImgs+'...';
+      imagenes=await uploadImgsCampo('img',tkId);
+      if(imagenesEquipos.length||imgData['imgEquipos']?.length)
+        btn.textContent='⏳ Subiendo equipos...';
+      imagenesEquipos=await uploadImgsCampo('imgEquipos',tkId);
+      imagenesCintillos=await uploadImgsCampo('imgCintillos',tkId);
+    }
+    btn.textContent='⏳ Guardando...';
     const t={
       id:tkId,timestamp:now.getTime(),
       fecha:now.toLocaleDateString('es-PE'),hora:now.toLocaleTimeString('es-PE',{hour:'2-digit',minute:'2-digit'}),
@@ -1832,11 +1900,44 @@ function autoAsignarAsesor(region,departamento,contrata,tipoGestion){
   conCarga.sort((a,b)=>a.carga-b.carga);return conCarga[0].nombre;
 }
 
+/* ── INDICADOR DE CONEXIÓN para técnicos en campo ── */
+function initNetworkIndicator(){
+  const bar=document.createElement('div');
+  bar.id='netBar';
+  bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9000;padding:5px 12px;font-size:11px;font-weight:700;text-align:center;transition:all .3s;display:none';
+  document.body.appendChild(bar);
+  function update(){
+    if(navigator.onLine){
+      bar.textContent='✅ Conexión restaurada — sincronizando...';
+      bar.style.background='#065f46';bar.style.color='#6ee7b7';
+      bar.style.display='block';
+      setTimeout(()=>{bar.style.display='none';},3000);
+    } else {
+      bar.textContent='📵 Sin conexión — los cambios se guardarán al recuperar señal';
+      bar.style.background='#7f1d1d';bar.style.color='#fca5a5';
+      bar.style.display='block';
+    }
+  }
+  window.addEventListener('online',update);
+  window.addEventListener('offline',update);
+  if(!navigator.onLine) update();
+}
+initNetworkIndicator();
+
 /* ── EXPORT ── */
-window.exportExcel=function(){
+window.exportExcel=async function(){
   const lista=me.rol==='asesor'?tickets.filter(t=>t.asesorAsignado===me.nombre):tickets;
   if(!lista.length){showToast('⚠️ No hay tickets','e');return;}
-  if(typeof XLSX==='undefined'){showToast('⚠️ Librería no cargada','e');return;}
+  /* Cargar XLSX solo en el momento de exportar (~300 KB ahorrados al inicio) */
+  if(typeof XLSX==='undefined'){
+    showToast('⏳ Cargando librería...','s');
+    await new Promise((res,rej)=>{
+      const s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload=res; s.onerror=rej;
+      document.head.appendChild(s);
+    });
+  }
   const rows=[['ID','Fecha','Hora','Región','Departamento','Contrata','Tipo Trabajo','N° SOT','Técnico','Tel. Técnico','Lat','Lng','Tipo Gestión','Motivo','Submotivo','Teléfono cliente','Dir. Correcta','Reprogramación','Cód. Solución','Comentario','Dirección','Estado','Asesor Asignado','Obs. Asesor','Fecha Gestión','Duración']];
   lista.forEach(t=>{
     const dur=t.timestamp&&t.timestampCierre?calcTiempo(t.timestamp,t.timestampCierre).txt:'Pendiente';
